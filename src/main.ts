@@ -3,8 +3,31 @@ import { getTasks, listenTasks, run } from "./function/executer";
 import { UDocument } from "./types/firebase";
 import { UTask } from "./types/task";
 import { schedule, unschedule } from "./cron";
-import { execute } from "./terminal";
 
+const lister = async (): Promise<() => void> => {
+  return await listenTasks(async (querySnapshot) => {
+    const changes = querySnapshot.docChanges();
+    for (let index = 0; index < changes.length; index++) {
+      const change = changes[index];
+      const task = {
+        ...change.doc.data(),
+        id: change.doc.id,
+      } as UDocument<UTask>;
+
+      const l = `Task: ${task.id} Cron: ${task.data.isCron} Run: ${task.data.isActive}`;
+      console.log(l);
+      if (task.data.isCron) {
+        if (change.type == "removed") unschedule(task);
+        else if (change.type == "added") schedule(task);
+        else if (change.type == "modified") {
+          unschedule(task);
+          schedule(task);
+        }
+      }
+      if (change.type == "modified" && task.data.isActive) run(task);
+    }
+  }).catch(async (err) => await lister());
+};
 (async () => {
   const server = process.env.SERVER ? process.env.SERVER : "debug";
   console.log("ServerCodeName: " + server);
@@ -37,26 +60,5 @@ import { execute } from "./terminal";
     await run(activeTask);
   }
 
-  listenTasks(async (querySnapshot) => {
-    const changes = querySnapshot.docChanges();
-    for (let index = 0; index < changes.length; index++) {
-      const change = changes[index];
-      const task = {
-        ...change.doc.data(),
-        id: change.doc.id,
-      } as UDocument<UTask>;
-
-      const l = `Task: ${task.id} Cron: ${task.data.isCron} Run: ${task.data.isActive}`;
-      console.log(l);
-      if (task.data.isCron) {
-        if (change.type == "removed") unschedule(task);
-        else if (change.type == "added") schedule(task);
-        else if (change.type == "modified") {
-          unschedule(task);
-          schedule(task);
-        }
-      }
-      if (change.type == "modified" && task.data.isActive) run(task);
-    }
-  });
+  lister().catch();
 })(); //.catch((err) => execute("sudo reboot"));
